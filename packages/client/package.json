@@ -1,0 +1,42 @@
+{
+  "name": "@cipherpad/client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -p tsconfig.json && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "eslint src test --max-warnings=0",
+    "test": "vitest run",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "@cipherpad/crypto": "workspace:*",
+    "dexie": "^4.0.11",
+    "dompurify": "^3.2.4",
+    "marked": "^16.2.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "workbox-window": "^7.4.1"
+  },
+  "devDependencies": {
+    "@cipherpad/server": "workspace:^",
+    "@electric-sql/pglite": "^0.5.8",
+    "@playwright/test": "^1.63.0",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.7",
+    "@types/dompurify": "^3.2.0",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.1",
+    "fake-indexeddb": "^6.2.5",
+    "jsdom": "^30.1.0",
+    "pg": "^8.23.0",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.0",
+    "vite-plugin-pwa": "^1.3.0",
+    "vitest": "^2.1.5"
+  }
+}

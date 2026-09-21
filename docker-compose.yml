@@ -1,0 +1,44 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: cipherpad
+      POSTGRES_PASSWORD: cipherpad
+      POSTGRES_DB: cipherpad
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cipherpad"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  server:
+    build:
+      context: .
+      dockerfile: packages/server/Dockerfile
+    environment:
+      DATABASE_URL: postgres://cipherpad:cipherpad@postgres:5432/cipherpad
+      APP_ORIGIN: http://localhost:5173
+      JWT_SECRET: ${JWT_SECRET:-0123456789abcdef0123456789abcdef}
+      PORT: 3000
+      COOKIE_SECURE: "false"
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  client:
+    build:
+      context: .
+      dockerfile: packages/client/Dockerfile
+    ports:
+      - "5173:80"
+    depends_on:
+      - server
+
+volumes:
+  pgdata:
