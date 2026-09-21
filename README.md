@@ -223,8 +223,6 @@ Still to come: zero knowledge database scan plus recovery flows plus export plus
 
 ### Known limitations
 
-Be honest about limits in this portfolio piece.
-
 * A malicious server can serve altered JavaScript and capture plaintext on next unlock because web crypto trusts served code. Service worker updates arrive through the same channel so a refreshed worker is trusted code delivery from the server too. Mitigation is signed client builds pinned versions and future native or extension packaging. Future work lists signed builds and transparency checks.
 * Metadata leaks remain. Note count sizes timestamps and revisions are visible to server for sync order. Mitigation is fixed size padding and batched sync. Future work lists size padding and schedule shaping.
 * No forward secrecy for stored notes. Vault compromise exposes history until rotation completes. Mitigation is prompt rotation plus per note reencryption on demand. Future work lists key rotation and versioned rewrap.
