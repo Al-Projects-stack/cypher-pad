@@ -16,7 +16,7 @@
     "@cipherpad/crypto": "workspace:*",
     "dexie": "^4.0.11",
     "dompurify": "^3.2.4",
-    "marked": "^16.2.0",
+    "marked": "^18.0.13",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "workbox-window": "^7.4.1"
