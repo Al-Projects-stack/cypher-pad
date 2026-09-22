@@ -13,6 +13,7 @@ test('write on A syncs to B then offline edits keep a conflict copy', async ({ b
   const pageB = await ctxB.newPage();
 
   await pageA.goto('/');
+  await pageA.getByTestId('landing-get-started').click();
   await pageA.getByTestId('password').fill(PASSWORD);
   await pageA.getByTestId('password-repeat').fill(PASSWORD);
   await pageA.getByTestId('vault-submit').click();
@@ -34,6 +35,7 @@ test('write on A syncs to B then offline edits keep a conflict copy', async ({ b
   await expect(pageA.getByTestId('sync-status')).toContainText('1 pushed', { timeout: 60000 });
 
   await pageB.goto('/');
+  await pageB.getByTestId('landing-login').click();
   await pageB.getByTestId('sync-url').fill(API);
   await pageB.getByTestId('sync-email').fill(EMAIL);
   await pageB.getByTestId('sync-password').fill(PASSWORD);
@@ -79,6 +81,7 @@ test('password change keeps notes readable on old and new devices', async ({ bro
   const pageB = await ctxB.newPage();
 
   await pageA.goto('/');
+  await pageA.getByTestId('landing-get-started').click();
   await pageA.getByTestId('password').fill(PASSWORD);
   await pageA.getByTestId('password-repeat').fill(PASSWORD);
   await pageA.getByTestId('vault-submit').click();
@@ -113,6 +116,7 @@ test('password change keeps notes readable on old and new devices', async ({ bro
   await expect(pageA.getByText('Secret note', { exact: true })).toBeVisible({ timeout: 60000 });
 
   await pageB.goto('/');
+  await pageB.getByTestId('landing-login').click();
   await pageB.getByTestId('sync-url').fill(API);
   await pageB.getByTestId('sync-email').fill(EMAIL_TWO);
   await pageB.getByTestId('sync-password').fill(NEW_PASSWORD);

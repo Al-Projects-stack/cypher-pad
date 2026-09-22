@@ -6,9 +6,12 @@ import { createNote, deleteNote, listNotes, updateNote, type NoteView } from './
 import { startBackgroundSync, syncNow, type BackgroundHandle } from './sync/engine.js';
 import { DEFAULT_SYNC_URL, SyncAccount } from './sync/account.js';
 import { AUTOLOCK_OPTIONS, readAutoLockMs, startAutoLock, type AutoLockHandle } from './vault/autolock.js';
+import { Landing } from './components/Landing.js';
+import { AuthError, AuthShell, AuthSubmit, AuthSwitch, PasswordField } from './components/AuthCard.js';
+import { fieldInput, fieldLabel, quietLink } from './styles/theme.js';
 import { createVaultLocal, hasVault, lockVault, unlockVault, type OpenVault } from './vault/session.js';
 
-type Mode = 'checking' | 'create' | 'unlock' | 'ready';
+type Mode = 'checking' | 'landing' | 'create' | 'login' | 'unlock' | 'ready';
 
 function parseTags(raw: string): string[] {
   return raw
@@ -60,7 +63,7 @@ export function App(): ReactElement {
     let live = true;
     hasVault(db)
       .then((exists) => {
-        if (live) setMode(exists ? 'unlock' : 'create');
+        if (live) setMode(exists ? 'unlock' : 'landing');
       })
       .catch(() => {
         if (live) setError('Storage is unavailable');
@@ -400,140 +403,149 @@ export function App(): ReactElement {
     );
   }
 
-  if (mode === 'create' || (mode === 'unlock' && !vault)) {
-    const isCreate = mode === 'create';
+  if (mode === 'landing') {
     return (
-      <main style={styles.page}>
-        <h1>Cipherpad</h1>
-        <p>{isCreate ? 'Create a vault to store notes on this device' : 'Vault is locked'}</p>
-        <label style={styles.label}>
-          Password
-          <input
-            style={styles.input}
-            data-testid="password"
-            type="password"
-            value={password}
-            autoComplete={isCreate ? 'new-password' : 'current-password'}
-            onChange={(e) => setPassword(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') void (isCreate ? handleCreateVault() : handleUnlock());
-            }}
-          />
-        </label>
-        {isCreate && (
-          <label style={styles.label}>
-            Repeat password
-            <input
-              style={styles.input}
-              data-testid="password-repeat"
-              type="password"
-              value={repeat}
-              autoComplete="new-password"
-              onChange={(e) => setRepeat(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') void handleCreateVault();
-              }}
-            />
-          </label>
-        )}
-        {error && <p style={styles.error}>{error}</p>}
-        <button
-          style={styles.primary}
-          data-testid="vault-submit"
-          disabled={busy}
-          onClick={() => void (isCreate ? handleCreateVault() : handleUnlock())}
-        >
-          {busy ? 'Working' : isCreate ? 'Create vault' : 'Unlock'}
-        </button>
-        {isCreate && (
-          <section style={styles.syncBox}>
-            <h2>Have an account on another device</h2>
-            <p>Log in to fetch the shared vault instead of creating a new one</p>
-            <label style={styles.label}>
-              Server
-              <input
-                style={styles.input}
-                data-testid="sync-url"
-                value={syncUrl}
-                onChange={(e) => setSyncUrl(e.target.value)}
-              />
-            </label>
-            <label style={styles.label}>
-              Email
-              <input
-                style={styles.input}
-                data-testid="sync-email"
-                value={syncEmail}
-                autoComplete="email"
-                onChange={(e) => setSyncEmail(e.target.value)}
-              />
-            </label>
-            <label style={styles.label}>
-              Password
-              <input
-                style={styles.input}
-                data-testid="sync-password"
-                type="password"
-                value={syncPassword}
-                autoComplete="current-password"
-                onChange={(e) => setSyncPassword(e.target.value)}
-              />
-            </label>
-            <button style={styles.secondary} data-testid="sync-login" disabled={busy} onClick={() => void handleSyncLogin()}>
-              Log in
-            </button>
-          </section>
-        )}
-        {!isCreate && (
-          <section style={styles.syncBox}>
-            <button style={styles.secondary} data-testid="forgot-toggle" onClick={() => setShowRecover((s) => !s)}>
-              Forgot password
-            </button>
-            {showRecover && (
-              <div style={styles.syncGrid}>
-                <p>Reset with the recovery key. This replaces the local vault copy.</p>
-                <label style={styles.label}>
-                  Email
-                  <input
-                    style={styles.input}
-                    data-testid="recover-email"
-                    value={syncEmail}
-                    autoComplete="email"
-                    onChange={(e) => setSyncEmail(e.target.value)}
-                  />
-                </label>
-                <label style={styles.label}>
-                  Recovery key
-                  <input
-                    style={styles.input}
-                    data-testid="recover-text"
-                    value={recoverText}
-                    autoComplete="off"
-                    onChange={(e) => setRecoverText(e.target.value)}
-                  />
-                </label>
-                <label style={styles.label}>
-                  New password
-                  <input
-                    style={styles.input}
-                    data-testid="recover-password"
-                    type="password"
-                    value={syncPassword}
-                    autoComplete="new-password"
-                    onChange={(e) => setSyncPassword(e.target.value)}
-                  />
-                </label>
-                <button style={styles.primary} data-testid="recover-submit" disabled={busy} onClick={() => void handleRecover()}>
-                  Reset password and replace local copy
-                </button>
-              </div>
-            )}
-          </section>
-        )}
-      </main>
+      <Landing
+        onCreate={() => {
+          setError('');
+          setMode('create');
+        }}
+        onLogin={() => {
+          setError('');
+          setMode('login');
+        }}
+      />
     );
   }
 
+  if (mode === 'create') {
+    return (
+      <AuthShell
+        title="Create a vault"
+        sub="One password seals notes on this device. Keep it safe, there is no reset without the recovery key shown next."
+      >
+        <PasswordField
+          label="Password"
+          value={password}
+          testId="password"
+          autoComplete="new-password"
+          showStrength
+          onChange={setPassword}
+          onEnter={() => void handleCreateVault()}
+        />
+        <PasswordField
+          label="Repeat password"
+          value={repeat}
+          testId="password-repeat"
+          autoComplete="new-password"
+          onChange={setRepeat}
+          onEnter={() => void handleCreateVault()}
+        />
+        <AuthError message={error} />
+        <AuthSubmit busy={busy} busyText="Working" idleText="Create vault" testId="vault-submit" onSubmit={() => void handleCreateVault()} />
+        <AuthSwitch text="Already have an account?" action="Log in" testId="go-login" onSwitch={() => { setError(''); setMode('login'); }} />
+      </AuthShell>
+    );
+  }
+
+  if (mode === 'login') {
+    return (
+      <AuthShell
+        title="Log in on this device"
+        sub="Fetch the shared vault with email and password. Nothing new is created here."
+      >
+        <label style={fieldLabel}>
+          Server
+          <input
+            style={fieldInput}
+            data-testid="sync-url"
+            value={syncUrl}
+            onChange={(e) => setSyncUrl(e.target.value)}
+          />
+        </label>
+        <label style={fieldLabel}>
+          Email
+          <input
+            style={fieldInput}
+            data-testid="sync-email"
+            value={syncEmail}
+            autoComplete="email"
+            onChange={(e) => setSyncEmail(e.target.value)}
+          />
+        </label>
+        <PasswordField
+          label="Password"
+          value={syncPassword}
+          testId="sync-password"
+          autoComplete="current-password"
+          onChange={setSyncPassword}
+          onEnter={() => void handleSyncLogin()}
+        />
+        <AuthError message={error} />
+        <AuthSubmit busy={busy} busyText="Working" idleText="Log in" testId="sync-login" onSubmit={() => void handleSyncLogin()} />
+        <AuthSwitch text="No vault yet?" action="Create one" testId="go-create" onSwitch={() => { setError(''); setMode('create'); }} />
+      </AuthShell>
+    );
+  }
+
+  if (mode === 'unlock' && !vault) {
+    return (
+      <AuthShell
+        title="Vault is locked"
+        sub="Unlock with the device password. Keys never leave this device."
+      >
+        <PasswordField
+          label="Password"
+          value={password}
+          testId="password"
+          autoComplete="current-password"
+          onChange={setPassword}
+          onEnter={() => void handleUnlock()}
+        />
+        <AuthError message={error} />
+        <AuthSubmit busy={busy} busyText="Working" idleText="Unlock" testId="vault-submit" onSubmit={() => void handleUnlock()} />
+        <div>
+          <button style={quietLink} data-testid="forgot-toggle" onClick={() => setShowRecover((s) => !s)}>
+            Forgot password
+          </button>
+          {showRecover && (
+            <div>
+              <p style={authNoteText}>Reset with the recovery key. This replaces the local vault copy.</p>
+              <label style={fieldLabel}>
+                Email
+                <input
+                  style={fieldInput}
+                  data-testid="recover-email"
+                  value={syncEmail}
+                  autoComplete="email"
+                  onChange={(e) => setSyncEmail(e.target.value)}
+                />
+              </label>
+              <label style={fieldLabel}>
+                Recovery key
+                <input
+                  style={fieldInput}
+                  data-testid="recover-text"
+                  value={recoverText}
+                  autoComplete="off"
+                  onChange={(e) => setRecoverText(e.target.value)}
+                />
+              </label>
+              <PasswordField
+                label="New password"
+                value={syncPassword}
+                testId="recover-password"
+                autoComplete="new-password"
+                onChange={setSyncPassword}
+                onEnter={() => void handleRecover()}
+              />
+              <AuthSubmit busy={busy} busyText="Working" idleText="Reset password and replace local copy" testId="recover-submit" onSubmit={() => void handleRecover()} />
+            </div>
+          )}
+        </div>
+      </AuthShell>
+    );
+  }
   if (pendingRecovery && vault) {
     return (
       <main style={styles.page}>
@@ -775,6 +787,8 @@ export function App(): ReactElement {
     </main>
   );
 }
+
+const authNoteText: React.CSSProperties = { margin: '8px 0 0', color: '#5b7186', fontSize: 14 };
 
 const styles: Record<string, React.CSSProperties> = {
   page: { maxWidth: 960, margin: '0 auto', padding: 24, fontFamily: 'system-ui, sans-serif' },
