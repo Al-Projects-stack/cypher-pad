@@ -4,7 +4,7 @@ import type { FastifyInstance } from 'fastify';
 import { Pool } from 'pg';
 import { buildApp } from '../src/app.js';
 import { loadConfig, type AppConfig } from '../src/config.js';
-import { loadSchemaSql, migrate, type DbLike } from '../src/db.js';
+import { loadSchemaSql, migrateLocked, type DbLike } from '../src/db.js';
 import { clearRateLimits } from '../src/rateLimit.js';
 
 export interface TestContext {
@@ -78,6 +78,38 @@ async function truncateAll(db: DbLike): Promise<void> {
   await db.query('DELETE FROM users', []);
 }
 
+function workerDatabaseName(): string {
+  const raw = process.env['VITEST_WORKER_ID'] ?? 'main';
+  const safe = raw.replace(/[^A-Za-z0-9_]/g, '').slice(0, 32) || 'main';
+  return `cipherpad_test_${safe}`;
+}
+
+async function workerDatabase(realUrl: string): Promise<Pool> {
+  const name = workerDatabaseName();
+  const adminUrl = new URL(realUrl);
+  adminUrl.pathname = '/postgres';
+  const admin = new Pool({ connectionString: adminUrl.toString() });
+  try {
+    await admin.query(`CREATE DATABASE "${name}"`, []);
+  } catch (err) {
+    if (!isDuplicateDatabase(err)) throw err;
+  } finally {
+    await admin.end();
+  }
+  const testUrl = new URL(realUrl);
+  testUrl.pathname = `/${name}`;
+  return new Pool({ connectionString: testUrl.toString() });
+}
+
+function isDuplicateDatabase(err: unknown): boolean {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    'code' in err &&
+    (err as { code?: unknown }).code === '42P04'
+  );
+}
+
 export async function createTestApp(): Promise<TestContext> {
   clearRateLimits();
   const realUrl = process.env['TEST_DATABASE_URL'] ?? process.env['DATABASE_URL'] ?? '';
@@ -87,8 +119,8 @@ export async function createTestApp(): Promise<TestContext> {
   const cfg = loadConfig(process.env);
 
   if (realUrl) {
-    const pool = new Pool({ connectionString: realUrl });
-    await migrate(pool);
+    const pool = await workerDatabase(realUrl);
+    await migrateLocked(pool);
     await truncateAll(pool);
     const app = await buildApp(cfg, pool, { logger: false });
     return {
