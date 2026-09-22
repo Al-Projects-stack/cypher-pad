@@ -10,6 +10,7 @@ export interface UserRow {
   kdf_algorithm: string;
   kdf_version: number;
   auth_verifier: string;
+  recovery_verifier: string | null;
   wrapped_vault_iv: Buffer;
   wrapped_vault_data: Buffer;
   wrapped_recovery_iv: Buffer | null;
@@ -38,6 +39,7 @@ export interface CreateUserInput {
   salt: Buffer;
   kdfIterations: number;
   authVerifier: string;
+  recoveryVerifier: string | null;
   wrappedVaultIv: Buffer;
   wrappedVaultData: Buffer;
   wrappedRecoveryIv: Buffer | null;
@@ -48,14 +50,15 @@ export async function createUser(db: DbLike, input: CreateUserInput): Promise<Us
   const id = randomUUID();
   await db.query(
     `INSERT INTO users
-     (id, email, salt, kdf_iterations, auth_verifier, wrapped_vault_iv, wrapped_vault_data, wrapped_recovery_iv, wrapped_recovery_data)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+     (id, email, salt, kdf_iterations, auth_verifier, recovery_verifier, wrapped_vault_iv, wrapped_vault_data, wrapped_recovery_iv, wrapped_recovery_data)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
     [
       id,
       input.email,
       input.salt,
       input.kdfIterations,
       input.authVerifier,
+      input.recoveryVerifier,
       input.wrappedVaultIv,
       input.wrappedVaultData,
       input.wrappedRecoveryIv,
@@ -78,12 +81,14 @@ export async function updateUserCredentials(
     wrappedVaultData: Buffer;
     wrappedRecoveryIv: Buffer | null;
     wrappedRecoveryData: Buffer | null;
+    recoveryVerifier?: string | null;
   }
 ): Promise<void> {
   await db.query(
     `UPDATE users SET salt = $2, kdf_iterations = $3, auth_verifier = $4,
      wrapped_vault_iv = $5, wrapped_vault_data = $6,
-     wrapped_recovery_iv = $7, wrapped_recovery_data = $8, updated_at = now()
+     wrapped_recovery_iv = $7, wrapped_recovery_data = $8,
+     recovery_verifier = COALESCE($9, recovery_verifier), updated_at = now()
      WHERE id = $1`,
     [
       userId,
@@ -93,7 +98,8 @@ export async function updateUserCredentials(
       input.wrappedVaultIv,
       input.wrappedVaultData,
       input.wrappedRecoveryIv,
-      input.wrappedRecoveryData
+      input.wrappedRecoveryData,
+      input.recoveryVerifier ?? null
     ]
   );
 }

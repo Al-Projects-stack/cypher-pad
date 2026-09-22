@@ -139,6 +139,9 @@ importers:
         specifier: ^3.25.76
         version: 3.25.76
     devDependencies:
+      '@cipherpad/crypto':
+        specifier: workspace:^
+        version: link:../crypto
       '@electric-sql/pglite':
         specifier: ^0.5.8
         version: 0.5.8

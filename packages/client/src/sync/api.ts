@@ -41,6 +41,55 @@ export interface VaultBlobs {
   wrappedRecoveryData?: string;
 }
 
+export interface RegisterInput {
+  email: string;
+  salt: string;
+  kdfIterations: number;
+  authKey: string;
+  wrappedVaultIv: string;
+  wrappedVaultData: string;
+  wrappedRecoveryIv?: string;
+  wrappedRecoveryData?: string;
+  recoveryAuth?: string;
+}
+
+export interface ChangePasswordInput {
+  newSalt: string;
+  newKdfIterations: number;
+  newAuthKey: string;
+  newWrappedVaultIv: string;
+  newWrappedVaultData: string;
+}
+
+export interface RecoverInput {
+  email: string;
+  recoveryAuth: string;
+  newSalt: string;
+  newKdfIterations: number;
+  newAuthKey: string;
+  newWrappedVaultIv: string;
+  newWrappedVaultData: string;
+}
+
+export interface RotateRecoveryInput {
+  newWrappedRecoveryIv: string;
+  newWrappedRecoveryData: string;
+  newRecoveryVerifier: string;
+}
+
+export interface RotateRecoveryInput {
+  newWrappedRecoveryIv: string;
+  newWrappedRecoveryData: string;
+  newRecoveryVerifier: string;
+}
+
+export interface RecoveryStart {
+  salt: string;
+  kdfIterations: number;
+  wrappedRecoveryIv: string;
+  wrappedRecoveryData: string;
+}
+
 export class SyncHttpError extends Error {
   status: number;
   body: PushResult | null;
@@ -86,17 +135,34 @@ export class SyncClient {
     return (await res.json()) as { salt: string; kdfIterations: number };
   }
 
-  async register(input: {
-    email: string;
-    salt: string;
-    kdfIterations: number;
-    authKey: string;
-    wrappedVaultIv: string;
-    wrappedVaultData: string;
-  }): Promise<{ userId: string; accessToken: string }> {
+  async register(input: RegisterInput): Promise<{ userId: string; accessToken: string }> {
     const res = await this.request('/auth/register', { method: 'POST', body: JSON.stringify(input) }, false);
     if (!res.ok) throw await this.readError(res);
     return (await res.json()) as { userId: string; accessToken: string };
+  }
+
+  async recoveryStart(email: string): Promise<RecoveryStart> {
+    const res = await this.request('/auth/recovery/start', { method: 'POST', body: JSON.stringify({ email }) }, false);
+    if (!res.ok) throw await this.readError(res);
+    return (await res.json()) as RecoveryStart;
+  }
+
+  async recover(input: RecoverInput): Promise<{ userId: string; accessToken: string }> {
+    const res = await this.request('/auth/recover', { method: 'POST', body: JSON.stringify(input) }, false);
+    if (!res.ok) throw await this.readError(res);
+    return (await res.json()) as { userId: string; accessToken: string };
+  }
+
+  async changePassword(input: ChangePasswordInput): Promise<{ userId: string; accessToken: string }> {
+    const res = await this.request('/auth/change_password', { method: 'POST', body: JSON.stringify(input) }, true);
+    if (!res.ok) throw await this.readError(res);
+    return (await res.json()) as { userId: string; accessToken: string };
+  }
+
+  async rotateRecovery(input: RotateRecoveryInput): Promise<{ ok: boolean }> {
+    const res = await this.request('/auth/recovery/rotate', { method: 'POST', body: JSON.stringify(input) }, true);
+    if (!res.ok) throw await this.readError(res);
+    return (await res.json()) as { ok: boolean };
   }
 
   async login(email: string, authKey: string): Promise<{ userId: string; accessToken: string }> {

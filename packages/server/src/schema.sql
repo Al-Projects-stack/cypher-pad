@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS users (
   kdf_algorithm TEXT NOT NULL DEFAULT 'PBKDF2',
   kdf_version INTEGER NOT NULL DEFAULT 1,
   auth_verifier TEXT NOT NULL,
+  recovery_verifier TEXT,
   wrapped_vault_iv BYTEA NOT NULL,
   wrapped_vault_data BYTEA NOT NULL,
   wrapped_recovery_iv BYTEA,
@@ -26,6 +27,8 @@ CREATE TABLE IF NOT EXISTS sessions (
 
 CREATE INDEX IF NOT EXISTS sessions_user_idx ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS sessions_expires_idx ON sessions(expires_at);
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS recovery_verifier TEXT;
 
 CREATE TABLE IF NOT EXISTS notes (
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,

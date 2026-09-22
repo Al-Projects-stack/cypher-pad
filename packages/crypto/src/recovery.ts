@@ -8,6 +8,7 @@ import type { WrappedKeyBundle } from './types.js';
 
 export const CROCKFORD_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
 export const RECOVERY_INFO = 'cipherpad/recovery/v1';
+export const RECOVERY_AUTH_INFO = 'cipherpad/recovery/auth/v1';
 const RECOVERY_BYTES = 16;
 
 function crockfordValue(ch: string): number {
@@ -148,4 +149,24 @@ export async function unwrapVaultWithRecovery(
   const aes = await recoveryAesKey(recoveryKeyBytes);
   const res = await unwrapVaultKey(aes, wrapped);
   return { rawVaultKey: res.rawVaultKey, vaultKey: res.vaultKey };
+}
+
+export async function deriveRecoveryAuthKey(recoveryKeyBytes: Uint8Array): Promise<Uint8Array> {
+  if (recoveryKeyBytes.length !== RECOVERY_BYTES) throw new Error('Recovery key size mismatch');
+  const subtle = getSubtle();
+  const base = await subtle.importKey('raw', recoveryKeyBytes as unknown as BufferSource, 'HKDF', false, [
+    'deriveBits'
+  ]);
+  const emptySalt = new Uint8Array(0);
+  const bits = await subtle.deriveBits(
+    {
+      name: 'HKDF',
+      hash: 'SHA-256',
+      salt: emptySalt as unknown as BufferSource,
+      info: utf8Encode(RECOVERY_AUTH_INFO) as unknown as BufferSource
+    },
+    base,
+    256
+  );
+  return new Uint8Array(bits);
 }

@@ -64,6 +64,8 @@ function redactPaths(): string[] {
     'req.headers.cookie',
     'req.body.authKey',
     'req.body.newAuthKey',
+    'req.body.recoveryAuth',
+    'req.body.newRecoveryVerifier',
     'req.body.wrappedVaultData',
     'req.body.wrappedVaultIv',
     'req.body.newWrappedVaultData',

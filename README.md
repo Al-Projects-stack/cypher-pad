@@ -8,7 +8,7 @@ What I am showcasing: a real key hierarchy using Web Crypto only, a hardened API
 
 ## Status
 
-Work in progress. Crypto, server auth, offline client and sync are working and tested. Recovery flows, export and auto lock are still to come.
+Work in progress. Crypto, server auth, offline client, sync, recovery flows, export and auto lock are working and tested. The zero knowledge database scan is still to come.
 
 ## Overview
 
@@ -141,6 +141,12 @@ Notes live encrypted in IndexedDB with revision counters and tombstones ready fo
 
 Client enforces the crypto package KDF floor on create and unlock, pins params after first trusted setup, and rejects any downgrade.
 
+## Recovery plus settings
+
+Signup generates a recovery key shown once with a written down confirm gate. The key wraps a second vault copy on the server plus a separate auth subkey that authorizes passwordless reset. Forgetting a password on any device runs parse then fetch then unwrap then rewrap then reset, so the same vault material continues without reencrypting notes.
+
+Settings hosts password change by rewrap only, recovery key rotation with show once, plaintext JSON export with an explicit warning, and auto lock timeout with idle listeners plus a persisted choice defaulting to five minutes. Locking clears keys plus index plus selection from memory on manual lock and on idle expiry alike.
+
 ## Sync
 
 Sync is live across `packages/server` and `packages/client`. The UI stays local first and a background loop merges every `15` seconds plus on reconnect plus on demand.
@@ -154,6 +160,9 @@ Live endpoints:
 * `GET /sync/pull`
 * `POST /sync/push`
 * `GET /auth/vault`
+* `POST /auth/recover`
+* `POST /auth/recovery/start`
+* `POST /auth/recovery/rotate`
 
 Run locally:
 
@@ -163,7 +172,7 @@ pnpm --filter @cipherpad/client dev
 
 ## Testing
 
-Unit vectors roundtrip and tamper tests live in `packages/crypto`. Auth integration plus hardening tests live in `packages/server`. Vault store search preview sync engine and markdown tests live in `packages/client`, plus a two device Playwright flow.
+Unit vectors roundtrip and tamper tests live in `packages/crypto`. Auth integration plus hardening plus recovery tests live in `packages/server`. Vault store search preview sync engine account recovery and auto lock tests live in `packages/client`, plus two device Playwright flows.
 
 * Known vectors for `PBKDF2` `HKDF` and `AES-GCM` cross checked with Node OpenSSL oracle
 * Roundtrip for register split vault create note encrypt decrypt recovery wrap and password rewrap
@@ -172,7 +181,8 @@ Unit vectors roundtrip and tamper tests live in `packages/crypto`. Auth integrat
 * Recovery tests validate grouping normalization alias mapping and check symbol mismatch before unwrap
 * Server auth tests cover register prelogin login refresh rotation logout password change and session revocation against a real Postgres engine
 * Server hardening tests cover Helmet headers strict Content Security Policy cookie flags CORS origin lock rate limits and body size limits
-* Client tests cover vault create plus unlock plus lock clearing plus encrypted store roundtrip plus tombstone hiding plus ciphertext only storage plus search plus sanitized preview plus sync engine push pull conflict and tombstone merge
+* Client tests cover vault create plus unlock plus lock clearing plus encrypted store roundtrip plus tombstone hiding plus ciphertext only storage plus search plus sanitized preview plus sync engine push pull conflict and tombstone merge plus account recovery wiring plus auto lock timers
+* Playwright covers write on A plus read on B plus offline edits with conflict copy plus password change across devices
 
 Run:
 
@@ -186,7 +196,7 @@ pnpm --filter @cipherpad/client typecheck
 pnpm --filter @cipherpad/client test:e2e
 ```
 
-Still to come: zero knowledge database scan plus recovery flows plus export plus auto lock.
+Still to come: zero knowledge database scan.
 
 ## Threat model
 
@@ -227,6 +237,8 @@ Still to come: zero knowledge database scan plus recovery flows plus export plus
 * Metadata leaks remain. Note count sizes timestamps and revisions are visible to server for sync order. Mitigation is fixed size padding and batched sync. Future work lists size padding and schedule shaping.
 * No forward secrecy for stored notes. Vault compromise exposes history until rotation completes. Mitigation is prompt rotation plus per note reencryption on demand. Future work lists key rotation and versioned rewrap.
 * Password strength bounds security. A stolen disk image hands the attacker the wrapped vault plus KDF params, so protection equals password strength times `600000` `PBKDF2` rounds and offline brute force is possible with a weak password. Mitigation is strong KDF params strength meter and recovery entropy option. Future work lists `Argon2id` via `WASM` when audited builds are available.
+* Recovery text owns the account. Whoever holds it can reset the password and lock out the owner, so its storage matters as much as password choice. Mitigation is show once handling plus rotation from a live session plus generic reset errors.
+* Export is plaintext by design. The downloaded file holds every note readable, so device and backup hygiene decide its safety. Mitigation is an explicit on screen warning plus export only from an unlocked client.
 * Clipboard export and preview rendering expand XSS impact if injection occurs. Mitigation is strict Content Security Policy with no inline scripts no third party scripts plus sanitized Markdown preview. Future work lists hardened renderer and privilege separation.
 
 ### Mitigations in place
@@ -246,6 +258,9 @@ Still to come: zero knowledge database scan plus recovery flows plus export plus
 * Local ciphertext only storage plus lock time memory clearing so a locked device reduces exposure of plaintext
 * Client side KDF floor plus param pinning so weak counts from the network cannot downgrade vault derivation
 * Base revision checks with `409` plus server version so silent overwrites cannot happen and both copies survive for user resolution
+* Recovery subkey with separate `HKDF` domain plus slow verifier plus dummy guarded fetch so reset needs the key text and leaks no enrollment signal
+* Password change plus recovery rotation rewrap vault material only so notes are never reencrypted and sessions revoke on credential reset
+* Auto lock timer with idle listeners plus persisted choice so unattended devices bound plaintext exposure in memory
 
 ### Future work
 

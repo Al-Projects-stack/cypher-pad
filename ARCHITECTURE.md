@@ -62,6 +62,9 @@ Live auth endpoints:
 * `POST /auth/logout`
 * `POST /auth/refresh`
 * `POST /auth/change_password`
+* `POST /auth/recover`
+* `POST /auth/recovery/start`
+* `POST /auth/recovery/rotate`
 * `GET /auth/me`
 * `GET /health`
 * `GET /sync/pull`
@@ -80,6 +83,7 @@ Live local behavior:
 * Account link plus fresh login with vault adopt and owner reencryption
 * In memory search index rebuilt on unlock and after merge
 * Background merge with conflict copies kept for user resolution
+* Settings with password change plus recovery rotation plus plaintext export plus auto lock timeout
 * Markdown editor with sanitized preview
 * Service worker precached shell for offline use
 

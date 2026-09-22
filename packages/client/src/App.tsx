@@ -5,6 +5,7 @@ import { NoteSearch } from './notes/search.js';
 import { createNote, deleteNote, listNotes, updateNote, type NoteView } from './notes/store.js';
 import { startBackgroundSync, syncNow, type BackgroundHandle } from './sync/engine.js';
 import { DEFAULT_SYNC_URL, SyncAccount } from './sync/account.js';
+import { AUTOLOCK_OPTIONS, readAutoLockMs, startAutoLock, type AutoLockHandle } from './vault/autolock.js';
 import { createVaultLocal, hasVault, lockVault, unlockVault, type OpenVault } from './vault/session.js';
 
 type Mode = 'checking' | 'create' | 'unlock' | 'ready';
@@ -38,8 +39,21 @@ export function App(): ReactElement {
   const [syncUrl, setSyncUrl] = useState(account.baseUrl);
   const [syncStatus, setSyncStatus] = useState('');
   const [accountTick, setAccountTick] = useState(0);
+  const [pendingRecovery, setPendingRecovery] = useState<string | null>(null);
+  const [recoverySaved, setRecoverySaved] = useState(false);
+  const [showRecover, setShowRecover] = useState(false);
+  const [recoverText, setRecoverText] = useState('');
+  const [view, setView] = useState<'notes' | 'settings'>('notes');
+  const [newPassword, setNewPassword] = useState('');
+  const [newRepeat, setNewRepeat] = useState('');
+  const [settingsStatus, setSettingsStatus] = useState('');
   const vaultRef = useRef<OpenVault | null>(null);
   const bgRef = useRef<BackgroundHandle | null>(null);
+  const autoRef = useRef<AutoLockHandle | null>(null);
+  const lockRef = useRef<() => void>(() => undefined);
+  const [autoLockMs, setAutoLockMs] = useState<number>(() =>
+    readAutoLockMs(typeof localStorage !== 'undefined' ? localStorage : null)
+  );
   void accountTick;
 
   useEffect(() => {
@@ -61,6 +75,10 @@ export function App(): ReactElement {
   }, [vault]);
 
   useEffect(() => {
+    lockRef.current = handleLock;
+  });
+
+  useEffect(() => {
     if (mode !== 'ready' || !vault) return;
     const handle = startBackgroundSync(
       account,
@@ -75,7 +93,13 @@ export function App(): ReactElement {
       }
     );
     bgRef.current = handle;
-    return () => handle.stop();
+    const auto = startAutoLock(() => lockRef.current(), autoLockMs, typeof localStorage !== 'undefined' ? localStorage : null);
+    autoRef.current = auto;
+    return () => {
+      handle.stop();
+      auto.stop();
+      autoRef.current = null;
+    };
   }, [mode, vault, db, account]);
 
   async function refresh(v: OpenVault): Promise<void> {
@@ -132,6 +156,7 @@ export function App(): ReactElement {
   function handleLock(): void {
     if (vault) lockVault(vault);
     setVault(null);
+    setView('notes');
     setNotes([]);
     searchIndex.clear();
     setSelectedId(null);
@@ -209,10 +234,12 @@ export function App(): ReactElement {
     setBusy(true);
     try {
       account.setBaseUrl(syncUrl);
-      await account.registerLink(db, vault, syncPassword, syncEmail);
+      const res = await account.registerLink(db, vault, syncPassword, syncEmail);
       setSyncPassword('');
       setAccountTick((t) => t + 1);
       setSyncStatus(`Linked as ${account.linkedEmail ?? syncEmail}`);
+      setPendingRecovery(res.recoveryText);
+      setRecoverySaved(false);
       await refresh(vault);
     } catch {
       setSyncStatus('Register failed');
@@ -243,6 +270,29 @@ export function App(): ReactElement {
     }
   }
 
+  async function handleRecover(): Promise<void> {
+    setError('');
+    if (!syncEmail || !recoverText || !syncPassword) {
+      setError('Email plus recovery text plus new password are required');
+      return;
+    }
+    setBusy(true);
+    try {
+      const v = await account.recoverFresh(db, syncEmail, recoverText, syncPassword, { overwrite: true });
+      setVault(v);
+      setSyncPassword('');
+      setRecoverText('');
+      setShowRecover(false);
+      setAccountTick((t) => t + 1);
+      await refresh(v);
+      setMode('ready');
+    } catch {
+      setError('Recovery failed');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleSyncNow(): Promise<void> {
     if (!vault) return;
     setSyncStatus('Syncing');
@@ -259,6 +309,78 @@ export function App(): ReactElement {
     await account.logout();
     setAccountTick((t) => t + 1);
     setSyncStatus('Not linked');
+  }
+
+  async function handlePasswordChange(): Promise<void> {
+    if (!vault) return;
+    setSettingsStatus('');
+    if (!newPassword) {
+      setSettingsStatus('New password is required');
+      return;
+    }
+    if (newPassword !== newRepeat) {
+      setSettingsStatus('Passwords do not match');
+      return;
+    }
+    setBusy(true);
+    try {
+      await account.changePassword(db, vault, newPassword);
+      setNewPassword('');
+      setNewRepeat('');
+      setAccountTick((t) => t + 1);
+      setSettingsStatus('Password updated');
+    } catch {
+      setSettingsStatus('Password change failed');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleRotateRecovery(): Promise<void> {
+    if (!vault) return;
+    setSettingsStatus('');
+    setBusy(true);
+    try {
+      const text = await account.rotateRecovery(db, vault);
+      setPendingRecovery(text);
+      setRecoverySaved(false);
+      setSettingsStatus('Recovery key rotated, save the new text');
+    } catch {
+      setSettingsStatus('Recovery rotation failed');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleExport(): Promise<void> {    if (!vault) return;
+    setSettingsStatus('');
+    try {
+      const all = await listNotes(db, vault);
+      const payload = {
+        app: 'cipherpad',
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        notes: all.map((n) => ({
+          title: n.title,
+          body: n.body,
+          tags: n.tags,
+          createdAt: n.createdAt,
+          updatedAt: n.updatedAt
+        }))
+      };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `cipherpad export ${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+      setSettingsStatus(`Exported ${all.length} notes as plaintext JSON`);
+    } catch {
+      setSettingsStatus('Export failed');
+    }
   }
 
   const visible = useMemo(() => {
@@ -362,6 +484,79 @@ export function App(): ReactElement {
             </button>
           </section>
         )}
+        {!isCreate && (
+          <section style={styles.syncBox}>
+            <button style={styles.secondary} data-testid="forgot-toggle" onClick={() => setShowRecover((s) => !s)}>
+              Forgot password
+            </button>
+            {showRecover && (
+              <div style={styles.syncGrid}>
+                <p>Reset with the recovery key. This replaces the local vault copy.</p>
+                <label style={styles.label}>
+                  Email
+                  <input
+                    style={styles.input}
+                    data-testid="recover-email"
+                    value={syncEmail}
+                    autoComplete="email"
+                    onChange={(e) => setSyncEmail(e.target.value)}
+                  />
+                </label>
+                <label style={styles.label}>
+                  Recovery key
+                  <input
+                    style={styles.input}
+                    data-testid="recover-text"
+                    value={recoverText}
+                    autoComplete="off"
+                    onChange={(e) => setRecoverText(e.target.value)}
+                  />
+                </label>
+                <label style={styles.label}>
+                  New password
+                  <input
+                    style={styles.input}
+                    data-testid="recover-password"
+                    type="password"
+                    value={syncPassword}
+                    autoComplete="new-password"
+                    onChange={(e) => setSyncPassword(e.target.value)}
+                  />
+                </label>
+                <button style={styles.primary} data-testid="recover-submit" disabled={busy} onClick={() => void handleRecover()}>
+                  Reset password and replace local copy
+                </button>
+              </div>
+            )}
+          </section>
+        )}
+      </main>
+    );
+  }
+
+  if (pendingRecovery && vault) {
+    return (
+      <main style={styles.page}>
+        <h1>Save this recovery key</h1>
+        <p>Write it down now. It is shown once and unlocks the vault if the password is lost.</p>
+        <p data-testid="recovery-text" style={styles.recoveryText}>{pendingRecovery}</p>
+        <label style={styles.row}>
+          <input
+            data-testid="recovery-confirm"
+            type="checkbox"
+            checked={recoverySaved}
+            onChange={(e) => setRecoverySaved(e.target.checked)}
+          />
+          I wrote down the recovery key
+        </label>
+        <button
+          style={styles.primary}
+          data-testid="recovery-continue"
+          disabled={!recoverySaved}
+          onClick={() => setPendingRecovery(null)}
+        >
+          Continue
+        </button>
       </main>
     );
   }
@@ -370,9 +565,17 @@ export function App(): ReactElement {
     <main style={styles.page}>
       <header style={styles.header}>
         <h1 style={styles.h1}>Cipherpad</h1>
-        <button style={styles.secondary} data-testid="lock-now" onClick={handleLock}>
-          Lock now
-        </button>
+        <div style={styles.row}>
+          <button style={styles.secondary} data-testid="view-notes" disabled={view === 'notes'} onClick={() => setView('notes')}>
+            Notes
+          </button>
+          <button style={styles.secondary} data-testid="view-settings" disabled={view === 'settings'} onClick={() => setView('settings')}>
+            Settings
+          </button>
+          <button style={styles.secondary} data-testid="lock-now" onClick={handleLock}>
+            Lock now
+          </button>
+        </div>
       </header>
       <section style={styles.syncBox}>
         <h2 style={styles.h2}>Sync account</h2>
@@ -427,6 +630,8 @@ export function App(): ReactElement {
         )}
         {syncStatus && <p data-testid="sync-status">{syncStatus}</p>}
       </section>
+      {view === 'notes' && (
+        <>
       <input
         style={styles.input}
         data-testid="search"
@@ -494,6 +699,79 @@ export function App(): ReactElement {
           {error && <p style={styles.error}>{error}</p>}
         </section>
       </div>
+        </>
+      )}
+      {view === 'settings' && (
+        <section style={styles.syncBox}>
+          <h2 style={styles.h2}>Password</h2>
+          <label style={styles.label}>
+            New password
+            <input
+              style={styles.input}
+              data-testid="settings-new-password"
+              type="password"
+              value={newPassword}
+              autoComplete="new-password"
+              onChange={(e) => setNewPassword(e.target.value)}
+            />
+          </label>
+          <label style={styles.label}>
+            Repeat new password
+            <input
+              style={styles.input}
+              data-testid="settings-new-repeat"
+              type="password"
+              value={newRepeat}
+              autoComplete="new-password"
+              onChange={(e) => setNewRepeat(e.target.value)}
+            />
+          </label>
+          <div style={styles.row}>
+            <button style={styles.primary} data-testid="settings-save-password" disabled={busy} onClick={() => void handlePasswordChange()}>
+              Update password
+            </button>
+          </div>
+          <h2 style={styles.h2}>Recovery key</h2>
+          {account.accessToken ? (
+            <div style={styles.row}>
+              <button style={styles.secondary} data-testid="settings-rotate" disabled={busy} onClick={() => void handleRotateRecovery()}>
+                Rotate recovery key
+              </button>
+            </div>
+          ) : (
+            <p>Link an account first to use recovery keys.</p>
+          )}
+          <h2 style={styles.h2}>Auto lock</h2>
+          <p>Locks the vault after idle time. Locking clears keys from memory.</p>
+          <label style={styles.label}>
+            Idle timeout
+            <select
+              style={styles.input}
+              data-testid="settings-autolock"
+              value={String(autoLockMs)}
+              onChange={(e) => {
+                const ms = Number(e.target.value);
+                setAutoLockMs(ms);
+                autoRef.current?.setTimeoutMs(ms);
+              }}
+            >
+              {AUTOLOCK_OPTIONS.map((o) => (
+                <option key={o.ms} value={String(o.ms)}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <h2 style={styles.h2}>Export</h2>
+          <p>Export writes every note as plaintext JSON. Store the file somewhere safe.</p>
+          <div style={styles.row}>
+            <button style={styles.secondary} data-testid="settings-export" onClick={() => void handleExport()}>
+              Export notes
+            </button>
+          </div>
+          {settingsStatus && <p data-testid="settings-status">{settingsStatus}</p>}
+        </section>
+      )}
     </main>
   );
 }
@@ -518,5 +796,6 @@ const styles: Record<string, React.CSSProperties> = {
   primary: { padding: '10px 14px', borderRadius: 8, border: 'none', background: '#1a2b3c', color: '#fff', cursor: 'pointer' },
   secondary: { padding: '10px 14px', borderRadius: 8, border: '1px solid #1a2b3c', background: '#fff', cursor: 'pointer' },
   danger: { padding: '10px 14px', borderRadius: 8, border: '1px solid #a00', background: '#fff', color: '#a00', cursor: 'pointer' },
-  error: { color: '#a00' }
+  error: { color: '#a00' },
+  recoveryText: { fontSize: 20, letterSpacing: 2, padding: 16, borderRadius: 8, border: '2px dashed #1a2b3c', background: '#eef4fa' }
 };

@@ -50,6 +50,7 @@ export {
 export {
   CROCKFORD_ALPHABET,
   RECOVERY_INFO,
+  RECOVERY_AUTH_INFO,
   encodeCrockford,
   decodeCrockford,
   normalizeRecoveryInput,
@@ -57,7 +58,8 @@ export {
   generateRecoveryKey,
   parseRecoveryKey,
   wrapVaultWithRecovery,
-  unwrapVaultWithRecovery
+  unwrapVaultWithRecovery,
+  deriveRecoveryAuthKey
 } from './recovery.js';
 
 export {

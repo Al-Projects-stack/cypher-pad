@@ -50,10 +50,15 @@ export const registerSchema = z.object({
   wrappedVaultIv: b64urlBytes(12, 12),
   wrappedVaultData: b64urlBytes(48, 2048),
   wrappedRecoveryIv: b64urlBytes(12, 12).optional(),
-  wrappedRecoveryData: b64urlBytes(48, 2048).optional()
+  wrappedRecoveryData: b64urlBytes(48, 2048).optional(),
+  recoveryAuth: b64urlBytes(32, 32).optional()
 });
 
 export const preloginSchema = z.object({
+  email: emailField
+});
+
+export const recoveryStartSchema = z.object({
   email: emailField
 });
 
@@ -62,8 +67,7 @@ export const loginSchema = z.object({
   authKey: b64urlBytes(32, 32)
 });
 
-export const changePasswordSchema = z.object({
-  newSalt: b64urlBytes(16, 64),
+export const changePasswordSchema = z.object({  newSalt: b64urlBytes(16, 64),
   newKdfIterations: z.number().int().min(1000).max(2000000),
   newAuthKey: b64urlBytes(32, 32),
   newWrappedVaultIv: b64urlBytes(12, 12),
@@ -71,6 +75,31 @@ export const changePasswordSchema = z.object({
   newWrappedRecoveryIv: b64urlBytes(12, 12).optional(),
   newWrappedRecoveryData: b64urlBytes(48, 2048).optional()
 });
+
+export const rotateRecoverySchema = z.object({
+  newWrappedRecoveryIv: b64urlBytes(12, 12),
+  newWrappedRecoveryData: b64urlBytes(48, 2048),
+  newRecoveryVerifier: b64urlBytes(32, 32)
+});
+
+export const recoverSchema = z
+  .object({
+    email: emailField,
+    recoveryAuth: b64urlBytes(32, 32),
+    newSalt: b64urlBytes(16, 64),
+    newKdfIterations: z.number().int().min(1000).max(2000000),
+    newAuthKey: b64urlBytes(32, 32),
+    newWrappedVaultIv: b64urlBytes(12, 12),
+    newWrappedVaultData: b64urlBytes(48, 2048),
+    newWrappedRecoveryIv: b64urlBytes(12, 12).optional(),
+    newWrappedRecoveryData: b64urlBytes(48, 2048).optional(),
+    newRecoveryVerifier: b64urlBytes(32, 32).optional()
+  })
+  .refine((v) => {
+    const parts = [v.newWrappedRecoveryIv, v.newWrappedRecoveryData, v.newRecoveryVerifier];
+    const present = parts.filter((p) => p !== undefined).length;
+    return present === 0 || present === 3;
+  }, 'Invalid recovery rotation');
 
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type PreloginInput = z.infer<typeof preloginSchema>;

@@ -4,17 +4,24 @@ import {
   base64UrlEncode,
   clearBytes,
   deriveMasterKey,
+  deriveRecoveryAuthKey,
   encodeAuthKey,
+  generateRecoveryKey,
+  generateSalt,
+  parseRecoveryKey,
   splitMasterKey,
   unwrapVaultKey,
+  unwrapVaultWithRecovery,
   validateKdfParams,
+  wrapVaultKey,
+  wrapVaultWithRecovery,
   type KdfParams
 } from '@cipherpad/crypto';
 import { readMeta, writeMeta, type CipherpadDb } from '../notes/db.js';
 import { hasVault, readVaultMeta } from '../vault/session.js';
 import { reencryptOwner } from '../notes/store.js';
 import { lockVault, type OpenVault } from '../vault/session.js';
-import { SyncClient } from './api.js';
+import { SyncClient, SyncHttpError } from './api.js';
 
 export interface MemoryStorage {
   getItem(key: string): string | null;
@@ -69,7 +76,12 @@ export class SyncAccount {
     return this.linkedEmail !== null && this.accessToken !== null;
   }
 
-  async registerLink(db: CipherpadDb, vault: OpenVault, password: string, email: string): Promise<string> {
+  async registerLink(
+    db: CipherpadDb,
+    vault: OpenVault,
+    password: string,
+    email: string
+  ): Promise<{ userId: string; recoveryText: string }> {
     const clean = email.trim().toLowerCase();
     const meta = await readVaultMeta(db);
     if (!meta) throw new Error('No vault found');
@@ -78,27 +90,38 @@ export class SyncAccount {
     validateKdfParams(kdf);
     const master = await deriveMasterKey(password, salt, kdf);
     const split = await splitMasterKey(master);
+    const gen = await generateRecoveryKey();
     try {
       const authKey = split.authKey;
       const wrappedIv = (await readMeta(db, 'wrappedVaultIv')) ?? '';
       const wrappedData = (await readMeta(db, 'wrappedVaultData')) ?? '';
-      const registered = await this.client.register({
-        email: clean,
-        salt: base64UrlEncode(salt),
-        kdfIterations: kdf.iterations,
-        authKey: encodeAuthKey(authKey),
-        wrappedVaultIv: wrappedIv,
-        wrappedVaultData: wrappedData
-      });
-      await reencryptOwner(db, vault, registered.userId);
-      await writeMeta(db, 'ownerId', registered.userId);
-      vault.ownerId = registered.userId;
-      this.accessToken = registered.accessToken;
-      this.storage.setItem(EMAIL_KEY, clean);
-      return registered.userId;
+      const second = await wrapVaultWithRecovery(gen.recoveryKeyBytes, vault.rawVaultKey);
+      const proof = await deriveRecoveryAuthKey(gen.recoveryKeyBytes);
+      try {
+        const registered = await this.client.register({
+          email: clean,
+          salt: base64UrlEncode(salt),
+          kdfIterations: kdf.iterations,
+          authKey: encodeAuthKey(authKey),
+          wrappedVaultIv: wrappedIv,
+          wrappedVaultData: wrappedData,
+          wrappedRecoveryIv: base64UrlEncode(backingBytes(second.iv)),
+          wrappedRecoveryData: base64UrlEncode(backingBytes(second.data)),
+          recoveryAuth: base64UrlEncode(proof)
+        });
+        await reencryptOwner(db, vault, registered.userId);
+        await writeMeta(db, 'ownerId', registered.userId);
+        vault.ownerId = registered.userId;
+        this.accessToken = registered.accessToken;
+        this.storage.setItem(EMAIL_KEY, clean);
+        return { userId: registered.userId, recoveryText: gen.recoveryKeyText };
+      } finally {
+        clearBytes(proof);
+      }
     } finally {
       clearBytes(split.authKey);
       clearBytes(salt);
+      clearBytes(gen.recoveryKeyBytes);
     }
   }
 
@@ -138,8 +161,125 @@ export class SyncAccount {
     }
   }
 
-  async refresh(): Promise<boolean> {
+  async recoverFresh(
+    db: CipherpadDb,
+    email: string,
+    recoveryText: string,
+    newPassword: string,
+    opts: { overwrite?: boolean } = {}
+  ): Promise<OpenVault> {
+    const clean = email.trim().toLowerCase();
+    if (!newPassword) throw new Error('Password is required');
+    if ((await hasVault(db)) && opts.overwrite !== true) throw new Error('Local vault exists');
+    const recoveryBytes = await parseRecoveryKey(recoveryText);
     try {
+      const start = await this.client.recoveryStart(clean);
+      const kdf: KdfParams = { ...DEFAULT_KDF_PARAMS, iterations: start.kdfIterations };
+      validateKdfParams(kdf);
+      const opened = await unwrapVaultWithRecovery(recoveryBytes, {
+        iv: backingBytes(base64UrlDecode(start.wrappedRecoveryIv)),
+        data: backingBytes(base64UrlDecode(start.wrappedRecoveryData)),
+        version: 1
+      });
+      const newSalt = generateSalt();
+      const newMaster = await deriveMasterKey(newPassword, backingBytes(newSalt), kdf);
+      const split = await splitMasterKey(newMaster);
+      try {
+        const rewrapped = await wrapVaultKey(split.kek, opened.rawVaultKey);
+        const proof = await deriveRecoveryAuthKey(recoveryBytes);
+        try {
+          const res = await this.client.recover({
+            email: clean,
+            recoveryAuth: base64UrlEncode(proof),
+            newSalt: base64UrlEncode(backingBytes(newSalt)),
+            newKdfIterations: kdf.iterations,
+            newAuthKey: encodeAuthKey(split.authKey),
+            newWrappedVaultIv: base64UrlEncode(backingBytes(rewrapped.iv)),
+            newWrappedVaultData: base64UrlEncode(backingBytes(rewrapped.data))
+          });
+          await writeMeta(db, 'ownerId', res.userId);
+          await writeMeta(db, 'salt', base64UrlEncode(backingBytes(newSalt)));
+          await writeMeta(db, 'kdfIterations', String(kdf.iterations));
+          await writeMeta(db, 'wrappedVaultIv', base64UrlEncode(backingBytes(rewrapped.iv)));
+          await writeMeta(db, 'wrappedVaultData', base64UrlEncode(backingBytes(rewrapped.data)));
+          this.accessToken = res.accessToken;
+          this.storage.setItem(EMAIL_KEY, clean);
+          return { ownerId: res.userId, vaultKey: opened.vaultKey, rawVaultKey: opened.rawVaultKey };
+        } finally {
+          clearBytes(proof);
+        }
+      } finally {
+        clearBytes(split.authKey);
+        clearBytes(newSalt);
+      }
+    } finally {
+      clearBytes(recoveryBytes);
+    }
+  }
+
+    async changePassword(db: CipherpadDb, vault: OpenVault, newPassword: string): Promise<void> {
+    if (!newPassword) throw new Error('Password is required');
+    const meta = await readVaultMeta(db);
+    if (!meta) throw new Error('No vault found');
+    const kdf: KdfParams = { ...DEFAULT_KDF_PARAMS, iterations: meta.kdfIterations };
+    validateKdfParams(kdf);
+    const newSalt = generateSalt();
+    const master = await deriveMasterKey(newPassword, backingBytes(newSalt), kdf);
+    const split = await splitMasterKey(master);
+    try {
+      const rewrapped = await wrapVaultKey(split.kek, vault.rawVaultKey);
+      const send = async (): Promise<void> => {
+        const res = await this.client.changePassword({
+          newSalt: base64UrlEncode(backingBytes(newSalt)),
+          newKdfIterations: kdf.iterations,
+          newAuthKey: encodeAuthKey(split.authKey),
+          newWrappedVaultIv: base64UrlEncode(backingBytes(rewrapped.iv)),
+          newWrappedVaultData: base64UrlEncode(backingBytes(rewrapped.data))
+        });
+        this.accessToken = res.accessToken;
+      };
+      if (this.accessToken) {
+        try {
+          await send();
+        } catch (err) {
+          if (err instanceof SyncHttpError && err.status === 401 && (await this.refresh())) {
+            await send();
+          } else {
+            throw err;
+          }
+        }
+      }
+      await writeMeta(db, 'salt', base64UrlEncode(backingBytes(newSalt)));
+      await writeMeta(db, 'wrappedVaultIv', base64UrlEncode(backingBytes(rewrapped.iv)));
+      await writeMeta(db, 'wrappedVaultData', base64UrlEncode(backingBytes(rewrapped.data)));
+    } finally {
+      clearBytes(split.authKey);
+      clearBytes(newSalt);
+    }
+  }
+
+  async rotateRecovery(db: CipherpadDb, vault: OpenVault): Promise<string> {
+    if (!this.accessToken) throw new Error('Account linking required');
+    const gen = await generateRecoveryKey();
+    try {
+      const wrapped = await wrapVaultWithRecovery(gen.recoveryKeyBytes, vault.rawVaultKey);
+      const proof = await deriveRecoveryAuthKey(gen.recoveryKeyBytes);
+      try {
+        await this.client.rotateRecovery({
+          newWrappedRecoveryIv: base64UrlEncode(backingBytes(wrapped.iv)),
+          newWrappedRecoveryData: base64UrlEncode(backingBytes(wrapped.data)),
+          newRecoveryVerifier: base64UrlEncode(proof)
+        });
+        return gen.recoveryKeyText;
+      } finally {
+        clearBytes(proof);
+      }
+    } finally {
+      clearBytes(gen.recoveryKeyBytes);
+    }
+  }
+
+  async refresh(): Promise<boolean> {    try {
       const res = await this.client.refresh();
       this.accessToken = res.accessToken;
       return true;

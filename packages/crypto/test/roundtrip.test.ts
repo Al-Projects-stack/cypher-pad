@@ -23,6 +23,7 @@ import {
   parseRecoveryKey,
   wrapVaultWithRecovery,
   unwrapVaultWithRecovery,
+  deriveRecoveryAuthKey,
   normalizeRecoveryInput,
   groupRecoveryText,
   encodeCrockford,
@@ -224,6 +225,27 @@ describe('recovery flow', () => {
       }
     } finally {
       clearBytes(authKey);
+    }
+  });
+
+  it('derives a stable auth subkey bound to recovery bytes', async () => {
+    const { recoveryKeyBytes } = await generateRecoveryKey();
+    try {
+      const first = await deriveRecoveryAuthKey(recoveryKeyBytes);
+      const second = await deriveRecoveryAuthKey(recoveryKeyBytes);
+      expect(first.length).toBe(32);
+      expect(first).toEqual(second);
+      const other = await generateRecoveryKey();
+      try {
+        const third = await deriveRecoveryAuthKey(other.recoveryKeyBytes);
+        expect(constantTimeEqual(first, third)).toBe(false);
+      } finally {
+        clearBytes(other.recoveryKeyBytes);
+      }
+      clearBytes(first);
+      clearBytes(second);
+    } finally {
+      clearBytes(recoveryKeyBytes);
     }
   });
 

@@ -29,6 +29,7 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@cipherpad/crypto": "workspace:^",
     "@electric-sql/pglite": "^0.5.8",
     "@types/node": "^22.9.0",
     "@types/pg": "^8.23.1",
