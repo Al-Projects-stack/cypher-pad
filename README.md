@@ -8,7 +8,7 @@ What I am showcasing: a real key hierarchy using Web Crypto only, a hardened API
 
 ## Status
 
-Work in progress. Crypto, server auth, offline client, sync, recovery flows, export and auto lock are working and tested. The zero knowledge database scan is still to come.
+Work in progress. Crypto, server auth, offline client, sync, recovery flows, export, auto lock and the zero knowledge database scan are working and tested with CI plus CodeQL plus Dependabot watching the repo.
 
 ## Overview
 
@@ -30,7 +30,7 @@ flowchart LR
 
 The client owns all crypto and plaintext. The server owns identity session sync storage and policy. Postgres owns durable ciphertext tombstones and change order. IndexedDB owns offline plaintext cache in encrypted form plus sync cursors. The service worker owns offline shell caching.
 
-Planned packages in this monorepo:
+Packages in this monorepo:
 
 * `packages/crypto` pure library using browser Web Crypto only
 * `packages/server` Node API using Fastify plus Postgres
@@ -87,6 +87,7 @@ Flow in words:
 * Vault: random `32` byte entropy imported as `HKDF` base then wrapped with `AES-GCM` `256` bit IV `12` bytes
 * Notes: note key via `HKDF` `SHA-256` info `cipherpad/note/v1/` plus note id then `AES-GCM` `256` bit IV `12` bytes AAD is canonical JSON of purpose user note and revision
 * Recovery: `16` byte entropy encoded as `26` data symbols plus `1` check symbol grouped as `9` `9` `9` with spaces
+* Recovery auth: `HKDF` `SHA-256` info `cipherpad/recovery/auth/v1` for a `32` byte reset proof with a slow scrypt hash on the server
 * Auth transport: `32` byte auth proof encoded as base64url then cleared from memory
 * Server verifier: slow scrypt hash of auth proof only
 
@@ -128,6 +129,9 @@ Live endpoints:
 * `POST /auth/logout`
 * `POST /auth/refresh`
 * `POST /auth/change_password`
+* `POST /auth/recover`
+* `POST /auth/recovery/start`
+* `POST /auth/recovery/rotate`
 * `GET /auth/me`
 * `GET /health`
 
@@ -183,6 +187,8 @@ Unit vectors roundtrip and tamper tests live in `packages/crypto`. Auth integrat
 * Server hardening tests cover Helmet headers strict Content Security Policy cookie flags CORS origin lock rate limits and body size limits
 * Client tests cover vault create plus unlock plus lock clearing plus encrypted store roundtrip plus tombstone hiding plus ciphertext only storage plus search plus sanitized preview plus sync engine push pull conflict and tombstone merge plus account recovery wiring plus auto lock timers
 * Playwright covers write on A plus read on B plus offline edits with conflict copy plus password change across devices
+* Zero knowledge scan registers plus syncs a canary note with production KDF params then asserts the secret appears in no table and no error response
+* CI runs typecheck lint tests and audit on every push plus CodeQL plus Dependabot
 
 Run:
 
@@ -196,7 +202,7 @@ pnpm --filter @cipherpad/client typecheck
 pnpm --filter @cipherpad/client test:e2e
 ```
 
-Still to come: zero knowledge database scan.
+The build is feature complete against the original scope. What remains is ongoing care: dependency updates via Dependabot, audit and CodeQL findings, and independent review.
 
 ## Threat model
 
@@ -261,6 +267,25 @@ Still to come: zero knowledge database scan.
 * Recovery subkey with separate `HKDF` domain plus slow verifier plus dummy guarded fetch so reset needs the key text and leaks no enrollment signal
 * Password change plus recovery rotation rewrap vault material only so notes are never reencrypted and sessions revoke on credential reset
 * Auto lock timer with idle listeners plus persisted choice so unattended devices bound plaintext exposure in memory
+* Zero knowledge scan registers plus syncs a canary note then asserts the secret appears in no table and no error response
+
+## Deploy notes
+
+I run production shaped deploys with Docker Compose. Copy `.env.example` to `.env` first, then start everything:
+
+```sh
+docker compose up --build
+```
+
+Checklist before exposing the API:
+
+* Set a long random `JWT_SECRET` unique per deploy, never the example value
+* Serve behind TLS and set `COOKIE_SECURE` to true so refresh cookies never travel plaintext
+* Keep the Postgres volume backed up because blobs plus tombstones are the sync source of truth
+* Set `APP_ORIGIN` to the exact client origin so the CORS lock matches the served frontend
+* Run `docker compose up` with restart policy on the host of choice
+
+Known gaps in this setup: compose terminates no TLS itself, runs one API instance with in memory rate limits, and ships no log aggregation. Those fit a portfolio deploy and would change before real users.
 
 ### Future work
 
