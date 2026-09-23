@@ -5,8 +5,10 @@ import { NoteSearch } from './notes/search.js';
 import { createNote, deleteNote, listNotes, updateNote, type NoteView } from './notes/store.js';
 import { startBackgroundSync, syncNow, type BackgroundHandle } from './sync/engine.js';
 import { DEFAULT_SYNC_URL, SyncAccount } from './sync/account.js';
-import { AUTOLOCK_OPTIONS, readAutoLockMs, startAutoLock, type AutoLockHandle } from './vault/autolock.js';
+import { readAutoLockMs, startAutoLock, type AutoLockHandle } from './vault/autolock.js';
 import { Landing } from './components/Landing.js';
+import { NotesView, SyncStrip } from './components/NotesView.js';
+import { SettingsView } from './components/SettingsView.js';
 import { AuthError, AuthShell, AuthSubmit, AuthSwitch, PasswordField } from './components/AuthCard.js';
 import { fieldInput, fieldLabel, quietLink } from './styles/theme.js';
 import { createVaultLocal, hasVault, lockVault, unlockVault, type OpenVault } from './vault/session.js';
@@ -574,242 +576,108 @@ export function App(): ReactElement {
   }
 
   return (
-    <main style={styles.page}>
-      <header style={styles.header}>
-        <h1 style={styles.h1}>Cipherpad</h1>
-        <div style={styles.row}>
-          <button style={styles.secondary} data-testid="view-notes" disabled={view === 'notes'} onClick={() => setView('notes')}>
-            Notes
-          </button>
-          <button style={styles.secondary} data-testid="view-settings" disabled={view === 'settings'} onClick={() => setView('settings')}>
-            Settings
-          </button>
-          <button style={styles.secondary} data-testid="lock-now" onClick={handleLock}>
+    <main className="cp-shell">
+      <div className="cp-wrap">
+      <header className="cp-topbar">
+        <span className="cp-brand">
+          <span className="cp-mark" aria-hidden="true">
+            C
+          </span>
+          Cipherpad
+        </span>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div className="cp-tabs" role="tablist" aria-label="Views">
+            <button className="cp-tab" role="tab" aria-selected={view === 'notes'} data-testid="view-notes" onClick={() => setView('notes')}>
+              Notes
+            </button>
+            <button className="cp-tab" role="tab" aria-selected={view === 'settings'} data-testid="view-settings" onClick={() => setView('settings')}>
+              Settings
+            </button>
+          </div>
+          <button style={topLock} data-testid="lock-now" onClick={handleLock}>
             Lock now
           </button>
         </div>
       </header>
-      <section style={styles.syncBox}>
-        <h2 style={styles.h2}>Sync account</h2>
-        {account.linkedEmail && account.accessToken ? (
-          <div style={styles.row}>
-            <span>Linked as {account.linkedEmail}</span>
-            <button style={styles.secondary} data-testid="sync-now" disabled={busy} onClick={() => void handleSyncNow()}>
-              Sync now
-            </button>
-            <button style={styles.secondary} disabled={busy} onClick={() => void handleUnlink()}>
-              Unlink
-            </button>
-          </div>
-        ) : (
-          <div style={styles.syncGrid}>
-            <label style={styles.label}>
-              Server
-              <input
-                style={styles.input}
-                data-testid="sync-url"
-                value={syncUrl}
-                onChange={(e) => setSyncUrl(e.target.value)}
-              />
-            </label>
-            <label style={styles.label}>
-              Email
-              <input
-                style={styles.input}
-                data-testid="sync-email"
-                value={syncEmail}
-                autoComplete="email"
-                onChange={(e) => setSyncEmail(e.target.value)}
-              />
-            </label>
-            <label style={styles.label}>
-              Vault password
-              <input
-                style={styles.input}
-                data-testid="sync-password"
-                type="password"
-                value={syncPassword}
-                autoComplete="current-password"
-                onChange={(e) => setSyncPassword(e.target.value)}
-              />
-            </label>
-            <div style={styles.row}>
-              <button style={styles.primary} data-testid="sync-register" disabled={busy} onClick={() => void handleSyncRegister()}>
-                Register this device
-              </button>
-            </div>
-          </div>
-        )}
-        {syncStatus && <p data-testid="sync-status">{syncStatus}</p>}
-      </section>
-      {view === 'notes' && (
-        <>
-      <input
-        style={styles.input}
-        data-testid="search"
-        type="search"
-        placeholder="Search notes"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
+      <SyncStrip
+        linkedEmail={account.linkedEmail}
+        hasToken={account.accessToken !== null}
+        status={syncStatus}
+        busy={busy}
+        serverUrl={syncUrl}
+        email={syncEmail}
+        password={syncPassword}
+        onUrl={setSyncUrl}
+        onEmail={setSyncEmail}
+        onPassword={setSyncPassword}
+        onRegister={() => void handleSyncRegister()}
+        onSyncNow={() => void handleSyncNow()}
+        onUnlink={() => void handleUnlink()}
       />
-      <div style={styles.columns}>
-        <section style={styles.list}>
-          <button style={styles.primary} data-testid="note-new" onClick={startNew}>
-            New note
-          </button>
-          {visible.length === 0 && <p>No notes yet, create one</p>}
-          {visible.map((n) => (
-            <button
-              key={n.noteId}
-              data-testid={`note-item-${n.noteId}`}
-              style={selectedId === n.noteId ? styles.selected : styles.card}
-              onClick={() => openNote(n)}
-            >
-              <strong>{n.title || 'Untitled'}</strong>
-              <small>{n.tags.join(', ')}</small>
-            </button>
-          ))}
-        </section>
-        <section style={styles.editor}>
-          <label style={styles.label}>
-            Title
-            <input
-              style={styles.input}
-              data-testid="note-title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-            />
-          </label>
-          <label style={styles.label}>
-            Tags, comma separated
-            <input style={styles.input} value={tags} onChange={(e) => setTags(e.target.value)} />
-          </label>
-          <div style={styles.row}>
-            <button style={styles.secondary} onClick={() => setPreview((p) => !p)}>
-              {preview ? 'Edit' : 'Preview'}
-            </button>
-            <button style={styles.primary} data-testid="note-save" disabled={busy} onClick={() => void handleSave()}>
-              Save
-            </button>
-            {selectedId && (
-              <button style={styles.danger} disabled={busy} onClick={() => void handleDelete()}>
-                Delete
-              </button>
-            )}
-          </div>
-          {preview ? (
-            <article style={styles.preview} dangerouslySetInnerHTML={{ __html: previewHtml }} />
-          ) : (
-            <textarea
-              style={styles.textarea}
-              data-testid="note-body"
-              value={body}
-              placeholder="Write markdown here"
-              onChange={(e) => setBody(e.target.value)}
-            />
-          )}
-          {error && <p style={styles.error}>{error}</p>}
-        </section>
-      </div>
-        </>
+      {view === 'notes' && (
+        <NotesView
+          notes={visible}
+          selectedId={selectedId}
+          query={query}
+          title={title}
+          body={body}
+          tags={tags}
+          preview={preview}
+          previewHtml={previewHtml}
+          busy={busy}
+          error={error}
+          onQuery={setQuery}
+          onNew={startNew}
+          onOpen={openNote}
+          onTitle={setTitle}
+          onBody={setBody}
+          onTags={setTags}
+          onPreview={() => setPreview((prev) => !prev)}
+          onSave={() => void handleSave()}
+          onDelete={() => void handleDelete()}
+        />
       )}
       {view === 'settings' && (
-        <section style={styles.syncBox}>
-          <h2 style={styles.h2}>Password</h2>
-          <label style={styles.label}>
-            New password
-            <input
-              style={styles.input}
-              data-testid="settings-new-password"
-              type="password"
-              value={newPassword}
-              autoComplete="new-password"
-              onChange={(e) => setNewPassword(e.target.value)}
-            />
-          </label>
-          <label style={styles.label}>
-            Repeat new password
-            <input
-              style={styles.input}
-              data-testid="settings-new-repeat"
-              type="password"
-              value={newRepeat}
-              autoComplete="new-password"
-              onChange={(e) => setNewRepeat(e.target.value)}
-            />
-          </label>
-          <div style={styles.row}>
-            <button style={styles.primary} data-testid="settings-save-password" disabled={busy} onClick={() => void handlePasswordChange()}>
-              Update password
-            </button>
-          </div>
-          <h2 style={styles.h2}>Recovery key</h2>
-          {account.accessToken ? (
-            <div style={styles.row}>
-              <button style={styles.secondary} data-testid="settings-rotate" disabled={busy} onClick={() => void handleRotateRecovery()}>
-                Rotate recovery key
-              </button>
-            </div>
-          ) : (
-            <p>Link an account first to use recovery keys.</p>
-          )}
-          <h2 style={styles.h2}>Auto lock</h2>
-          <p>Locks the vault after idle time. Locking clears keys from memory.</p>
-          <label style={styles.label}>
-            Idle timeout
-            <select
-              style={styles.input}
-              data-testid="settings-autolock"
-              value={String(autoLockMs)}
-              onChange={(e) => {
-                const ms = Number(e.target.value);
-                setAutoLockMs(ms);
-                autoRef.current?.setTimeoutMs(ms);
-              }}
-            >
-              {AUTOLOCK_OPTIONS.map((o) => (
-                <option key={o.ms} value={String(o.ms)}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <h2 style={styles.h2}>Export</h2>
-          <p>Export writes every note as plaintext JSON. Store the file somewhere safe.</p>
-          <div style={styles.row}>
-            <button style={styles.secondary} data-testid="settings-export" onClick={() => void handleExport()}>
-              Export notes
-            </button>
-          </div>
-          {settingsStatus && <p data-testid="settings-status">{settingsStatus}</p>}
-        </section>
+        <SettingsView
+          busy={busy}
+          linked={account.accessToken !== null}
+          autoLockMs={autoLockMs}
+          newPassword={newPassword}
+          newRepeat={newRepeat}
+          settingsStatus={settingsStatus}
+          onNewPassword={setNewPassword}
+          onNewRepeat={setNewRepeat}
+          onPasswordChange={() => void handlePasswordChange()}
+          onRotateRecovery={() => void handleRotateRecovery()}
+          onAutoLock={(ms) => {
+            setAutoLockMs(ms);
+            autoRef.current?.setTimeoutMs(ms);
+          }}
+          onExport={() => void handleExport()}
+        />
       )}
+      </div>
     </main>
   );
 }
 
 const authNoteText: React.CSSProperties = { margin: '8px 0 0', color: '#5b7186', fontSize: 14 };
 
+const topLock: React.CSSProperties = {
+  padding: '9px 16px',
+  fontSize: 14,
+  fontWeight: 600,
+  borderRadius: 999,
+  border: '1px solid #33506b',
+  background: 'transparent',
+  color: '#e8f1f8',
+  cursor: 'pointer'
+};
+
 const styles: Record<string, React.CSSProperties> = {
   page: { maxWidth: 960, margin: '0 auto', padding: 24, fontFamily: 'system-ui, sans-serif' },
-  header: { display: 'flex', alignItems: 'center', justifyContent: 'space-between' },
-  h1: { margin: 0 },
-  h2: { margin: '12px 0 0', fontSize: 18 },
-  syncBox: { border: '1px solid #888', borderRadius: 8, padding: 12, marginTop: 12, display: 'grid', gap: 8 },
-  syncGrid: { display: 'grid', gap: 8 },
-  label: { display: 'grid', gap: 6, marginTop: 12 },
-  input: { padding: 10, fontSize: 15, borderRadius: 8, border: '1px solid #888' },
-  columns: { display: 'grid', gridTemplateColumns: '260px 1fr', gap: 16, marginTop: 16 },
-  list: { display: 'grid', gap: 8, alignContent: 'start' },
-  editor: { display: 'grid', gap: 8, alignContent: 'start' },
-  card: { textAlign: 'left', padding: 10, borderRadius: 8, border: '1px solid #888', background: '#fff', cursor: 'pointer', display: 'grid', gap: 4 },
-  selected: { textAlign: 'left', padding: 10, borderRadius: 8, border: '2px solid #1a2b3c', background: '#eef4fa', cursor: 'pointer', display: 'grid', gap: 4 },
   row: { display: 'flex', gap: 8 },
-  textarea: { minHeight: 320, padding: 10, fontSize: 15, borderRadius: 8, border: '1px solid #888', fontFamily: 'inherit' },
-  preview: { minHeight: 320, padding: 12, borderRadius: 8, border: '1px solid #888', background: '#fff' },
   primary: { padding: '10px 14px', borderRadius: 8, border: 'none', background: '#1a2b3c', color: '#fff', cursor: 'pointer' },
-  secondary: { padding: '10px 14px', borderRadius: 8, border: '1px solid #1a2b3c', background: '#fff', cursor: 'pointer' },
-  danger: { padding: '10px 14px', borderRadius: 8, border: '1px solid #a00', background: '#fff', color: '#a00', cursor: 'pointer' },
   error: { color: '#a00' },
   recoveryText: { fontSize: 20, letterSpacing: 2, padding: 16, borderRadius: 8, border: '2px dashed #1a2b3c', background: '#eef4fa' }
 };

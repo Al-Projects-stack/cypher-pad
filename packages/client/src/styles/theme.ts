@@ -253,3 +253,95 @@ export const strengthLabel: CSSProperties = {
   color: palette.muted,
   marginTop: 4
 };
+
+export const cardField: CSSProperties = {
+  padding: 10,
+  fontSize: 15,
+  borderRadius: radii.field,
+  border: '1px solid #b9c9d8',
+  width: '100%',
+  boxSizing: 'border-box'
+};
+
+export const cardLabel: CSSProperties = {
+  display: 'grid',
+  gap: 6,
+  fontSize: 13,
+  fontWeight: 700,
+  color: palette.muted
+};
+
+export const cardPrimary: CSSProperties = {
+  padding: '10px 18px',
+  fontSize: 15,
+  fontWeight: 700,
+  borderRadius: radii.field,
+  border: 'none',
+  background: palette.ink,
+  color: '#fff',
+  cursor: 'pointer'
+};
+
+export const cardSecondary: CSSProperties = {
+  padding: '10px 18px',
+  fontSize: 15,
+  fontWeight: 600,
+  borderRadius: radii.field,
+  border: '1px solid #b9c9d8',
+  background: '#fff',
+  color: palette.text,
+  cursor: 'pointer'
+};
+
+export const cardDanger: CSSProperties = {
+  padding: '10px 18px',
+  fontSize: 15,
+  fontWeight: 600,
+  borderRadius: radii.field,
+  border: '1px solid #e5484d',
+  background: '#fff',
+  color: '#b4232a',
+  cursor: 'pointer'
+};
+
+export const darkInput: CSSProperties = {
+  padding: 10,
+  fontSize: 14,
+  borderRadius: radii.field,
+  border: `1px solid ${palette.line}`,
+  background: 'rgba(255, 255, 255, 0.06)',
+  color: palette.light,
+  width: '100%',
+  boxSizing: 'border-box'
+};
+
+export const darkButton: CSSProperties = {
+  padding: '9px 16px',
+  fontSize: 14,
+  fontWeight: 600,
+  borderRadius: radii.field,
+  border: `1px solid ${palette.line}`,
+  background: 'transparent',
+  color: palette.light,
+  cursor: 'pointer',
+  whiteSpace: 'nowrap'
+};
+
+export const accentButton: CSSProperties = {
+  padding: '9px 16px',
+  fontSize: 14,
+  fontWeight: 700,
+  borderRadius: radii.field,
+  border: 'none',
+  background: palette.accent,
+  color: palette.accentInk,
+  cursor: 'pointer',
+  whiteSpace: 'nowrap'
+};
+
+export const toolbarRow: CSSProperties = {
+  display: 'flex',
+  gap: 8,
+  flexWrap: 'wrap',
+  alignItems: 'center'
+};
